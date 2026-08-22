@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Chameleon 3D - Ultimate Edition</title>
+  <title>Chameleon 3D - Indoor & Custom Brush</title>
   <style>
     body { margin: 0; overflow: hidden; font-family: system-ui, sans-serif; background: #020617; color: #fff; user-select: none; }
     #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; z-index: 10; background: rgba(2,6,23,0.95); backdrop-filter: blur(10px); }
     .card { background: #0f172a; padding: 25px; border-radius: 16px; text-align: center; border: 1px solid #1e293b; width: 340px; box-shadow: 0 20px 50px rgba(0,0,0,0.8); }
-    h2 { margin-top: 0; font-size: 24px; color: #38bdf8; letter-spacing: 1px; }
+    h2 { margin-top: 0; font-size: 24px; color: #38bdf8; }
     button { background: #22c55e; color: #022c22; font-weight: bold; border: none; padding: 12px; margin: 6px 0; border-radius: 8px; cursor: pointer; width: 100%; font-size: 15px; }
     input[type="text"] { padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #020617; color: #fff; text-align: center; width: 90%; margin-bottom: 12px; font-size: 16px; outline: none; }
-    #hud { position: absolute; top: 16px; left: 16px; background: rgba(15, 23, 42, 0.9); padding: 14px; border-radius: 12px; display: none; z-index: 5; border: 1px solid #334155; }
-    .paint-box { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    #hud { position: absolute; top: 16px; left: 16px; background: rgba(15, 23, 42, 0.9); padding: 14px; border-radius: 12px; display: none; z-index: 5; border: 1px solid #334155; width: 220px; }
+    .brush-box { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; background: #020617; padding: 8px; border-radius: 8px; border: 1px solid #334155; }
+    .brush-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
     #blind-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: #000; z-index: 8; display: none; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; color: #ef4444; text-align: center; }
     #ready-btn { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); width: 220px; background: #eab308; color: #000; display: none; z-index: 9; font-weight: bold; padding: 14px; border-radius: 8px; border: none; cursor: pointer; }
     #whistle-notify { position: absolute; top: 20%; left: 50%; transform: translate(-50%, -50%); color: #facc15; font-size: 28px; font-weight: bold; display: none; z-index: 7; text-shadow: 0 0 10px #facc15; }
@@ -27,7 +28,7 @@
     <div class="card">
       <h2>CHAMELEON 3D</h2>
       <input type="text" id="room-input" placeholder="Oda Adı">
-      <button onclick="initGame('pc')">OYUNA BAŞLA (PC)</button>
+      <button onclick="initGame()">OYUNA BAŞLA</button>
     </div>
   </div>
 
@@ -38,33 +39,35 @@
 
   <div id="hud">
     <div><b>Rol:</b> <span id="role-label" style="color:#38bdf8;">Bekleniyor...</span></div>
-    <div id="paint-panel" class="paint-box">
-      <label for="live-color" style="font-size:12px;">Kamuflaj Rengi:</label>
-      <input type="color" id="live-color" value="#16a34a" onchange="changeColor(this.value)">
+    
+    <div id="paint-panel" class="brush-box">
+      <div style="font-weight:bold; font-size:13px; color:#38bdf8;">🎨 Fırça Paneli</div>
+      <div class="brush-row"><span>Kafa:</span> <input type="color" id="c-head" value="#16a34a" onchange="updatePartColor('head', this.value)"></div>
+      <div class="brush-row"><span>Gövde:</span> <input type="color" id="c-body" value="#16a34a" onchange="updatePartColor('body', this.value)"></div>
+      <div class="brush-row"><span>Kollar:</span> <input type="color" id="c-arms" value="#16a34a" onchange="updatePartColor('arms', this.value)"></div>
+      <div class="brush-row"><span>Bacaklar:</span> <input type="color" id="c-legs" value="#0f172a" onchange="updatePartColor('legs', this.value)"></div>
     </div>
-    <div id="controls-info" style="font-size:11px; color:#94a3b8; margin-top:8px;">
-      [WASD] Hareket<br>
+
+    <div style="font-size:11px; color:#94a3b8; margin-top:8px;">
+      [WASD] Hareket | [SPACE] Tırman<br>
       [1] Ayakta | [2] Çömel | [3] Yatağa Yat<br>
-      [F] Islık Çal (Bukalemun) / Ateş Et (Avcı)
+      [F] Islık (Bukalemun) / Ateş Et (Avcı)
     </div>
   </div>
 
   <script>
     let roomName = "", client = null;
     let myId = "p_" + Math.random().toString(36).substr(2, 6);
-    let myRole = "chameleon", currentColor = "#16a34a", currentPose = "stand";
+    let myRole = "chameleon", currentPose = "stand";
     let scene, camera, renderer, playerGroup, opponentGroup;
     let playerParts = {}, opponentParts = {};
-    let keys = {}, playerPos = { x: 0, z: 0, rotY: 0 };
+    let colliders = [];
+    let keys = {}, playerPos = { x: 0, y: 0, z: 0, rotY: 0 };
     let isGameStarted = false;
 
-    let seed = 54321;
-    function pseudoRandom() {
-      let x = Math.sin(seed++) * 10000;
-      return x - Math.floor(x);
-    }
+    let bodyColors = { head: "#16a34a", body: "#16a34a", arms: "#16a34a", legs: "#0f172a" };
 
-    function initGame(type) {
+    function initGame() {
       roomName = document.getElementById('room-input').value.trim();
       if (!roomName) return alert("Oda adı girin!");
 
@@ -77,45 +80,60 @@
       connectMQTT();
     }
 
-    function createCharacterModel(colorHex, isHunter) {
+    function createCharacterModel(isHunter) {
       const group = new THREE.Group();
-      const matBody = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.6 });
-      const matSkin = new THREE.MeshStandardMaterial({ color: 0xffdbac });
-      const matDark = new THREE.MeshStandardMaterial({ color: 0x1e293b });
+      
+      const headMat = new THREE.MeshStandardMaterial({ color: isHunter ? 0xef4444 : bodyColors.head });
+      const bodyMat = new THREE.MeshStandardMaterial({ color: isHunter ? 0xd97706 : bodyColors.body });
+      const armMat = new THREE.MeshStandardMaterial({ color: isHunter ? 0xd97706 : bodyColors.arms });
+      const legMat = new THREE.MeshStandardMaterial({ color: isHunter ? 0x0f172a : bodyColors.legs });
 
-      const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.4), matBody);
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.4), bodyMat);
       body.position.y = 0.9;
-      body.castShadow = true;
       group.add(body);
 
-      const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), matSkin);
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), headMat);
       head.position.y = 1.6;
-      head.castShadow = true;
       group.add(head);
 
+      const armGeo = new THREE.BoxGeometry(0.18, 0.7, 0.18);
+      const lArm = new THREE.Mesh(armGeo, armMat);
+      lArm.position.set(-0.42, 0.85, 0);
+      group.add(lArm);
+      const rArm = new THREE.Mesh(armGeo, armMat);
+      rArm.position.set(0.42, 0.85, 0);
+      group.add(rArm);
+
       const legGeo = new THREE.BoxGeometry(0.2, 0.7, 0.2);
-      const leftLeg = new THREE.Mesh(legGeo, matDark);
-      leftLeg.position.set(-0.18, 0.35, 0);
-      group.add(leftLeg);
+      const lLeg = new THREE.Mesh(legGeo, legMat);
+      lLeg.position.set(-0.18, 0.35, 0);
+      group.add(lLeg);
+      const rLeg = new THREE.Mesh(legGeo, legMat);
+      rLeg.position.set(0.18, 0.35, 0);
+      group.add(rLeg);
 
-      const rightLeg = new THREE.Mesh(legGeo, matDark);
-      rightLeg.position.set(0.18, 0.35, 0);
-      group.add(rightLeg);
-
-      // Hunter Silahı
       if (isHunter) {
         const rifle = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 1.2), new THREE.MeshStandardMaterial({ color: 0x000000 }));
         rifle.position.set(0.35, 1.1, -0.4);
         group.add(rifle);
       }
 
-      return { group, matBody, body, head, leftLeg, rightLeg };
+      return { group, headMat, bodyMat, armMat, legMat, body, head };
+    }
+
+    function updatePartColor(part, hex) {
+      bodyColors[part] = hex;
+      const col = parseInt(hex.replace("#", "0x"));
+      if (part === 'head') playerParts.headMat.color.setHex(col);
+      if (part === 'body') playerParts.bodyMat.color.setHex(col);
+      if (part === 'arms') playerParts.armMat.color.setHex(col);
+      if (part === 'legs') playerParts.legMat.color.setHex(col);
     }
 
     function setup3D() {
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x020617);
-      scene.fog = new THREE.FogExp2(0x020617, 0.015);
+      scene.background = new THREE.Color(0x0a0f1d);
+      scene.fog = new THREE.FogExp2(0x0a0f1d, 0.03);
 
       camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
       renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -123,44 +141,53 @@
       renderer.shadowMap.enabled = true;
       document.body.appendChild(renderer.domElement);
 
-      scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-      const sun = new THREE.DirectionalLight(0xffedd5, 1.2);
-      sun.position.set(30, 50, 30);
-      sun.castShadow = true;
-      scene.add(sun);
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+      const light = new THREE.PointLight(0xffedd5, 1.5, 60);
+      light.position.set(0, 15, 0);
+      scene.add(light);
 
-      const floorMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.9 });
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(120, 120), floorMat);
+      // Kapalı Mekan (Zemin, Tavan ve 4 Duvar)
+      const wallMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.8 });
+      
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), wallMat);
       floor.rotation.x = -Math.PI / 2;
-      floor.receiveShadow = true;
       scene.add(floor);
 
-      // Sabit Harita Yapısı
-      for (let i = 0; i < 60; i++) {
-        const x = (pseudoRandom() - 0.5) * 100;
-        const z = (pseudoRandom() - 0.5) * 100;
-        const type = pseudoRandom();
+      const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), wallMat);
+      ceiling.position.y = 10;
+      ceiling.rotation.x = Math.PI / 2;
+      scene.add(ceiling);
 
-        if (type > 0.6) {
-          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 3), new THREE.MeshStandardMaterial({ color: 0x78350f }));
-          trunk.position.set(x, 1.5, z);
-          scene.add(trunk);
-          const leaves = new THREE.Mesh(new THREE.ConeGeometry(3, 6, 6), new THREE.MeshStandardMaterial({ color: 0x166534 }));
-          leaves.position.set(x, 5, z);
-          scene.add(leaves);
-        } else if (type > 0.3) {
-          const bush = new THREE.Mesh(new THREE.DodecahedronGeometry(1.6), new THREE.MeshStandardMaterial({ color: 0x15803d }));
-          bush.position.set(x, 0.8, z);
-          scene.add(bush);
-        } else {
-          const house = new THREE.Mesh(new THREE.BoxGeometry(5, 4, 5), new THREE.MeshStandardMaterial({ color: 0x334155 }));
-          house.position.set(x, 2, z);
-          scene.add(house);
-        }
-      }
+      const createWall = (x, z, rotY) => {
+        const w = new THREE.Mesh(new THREE.BoxGeometry(50, 10, 1), wallMat);
+        w.position.set(x, 5, z);
+        w.rotation.y = rotY;
+        scene.add(w);
+        colliders.push(w);
+      };
+      createWall(0, -25, 0);
+      createWall(0, 25, 0);
+      createWall(-25, 0, Math.PI / 2);
+      createWall(25, 0, Math.PI / 2);
 
-      playerParts = createCharacterModel(currentColor, false);
-      opponentParts = createCharacterModel("#ef4444", true);
+      // İç Mekan Objelere (Kutular ve Sütunlar)
+      const boxMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.6 });
+      const createBox = (x, y, z, w, h, d) => {
+        const box = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), boxMat);
+        box.position.set(x, y + h / 2, z);
+        scene.add(box);
+        colliders.push(box);
+      };
+
+      // Engel Ve Tırmanma Kutuları
+      createBox(-10, 0, -10, 4, 3, 4);
+      createBox(-10, 3, -10, 3, 3, 3); // Üst üste kutu
+      createBox(12, 0, 8, 6, 2, 4);
+      createBox(0, 0, 15, 3, 8, 3); // Yüksek Sütun
+      createBox(-15, 0, 10, 5, 2.5, 5);
+
+      playerParts = createCharacterModel(false);
+      opponentParts = createCharacterModel(true);
 
       playerGroup = playerParts.group;
       opponentGroup = opponentParts.group;
@@ -171,28 +198,26 @@
       animate();
     }
 
-    function changeColor(hex) {
-      currentColor = hex;
-      playerParts.matBody.color.setHex(parseInt(hex.replace("#", "0x")));
-    }
-
     function applyPose(parts, pose) {
       if (pose === "stand") {
         parts.group.rotation.x = 0;
-        parts.group.position.y = 0;
+        parts.body.position.y = 0.9;
+        parts.head.position.y = 1.6;
       } else if (pose === "crouch") {
         parts.group.rotation.x = 0;
-        parts.group.position.y = -0.4;
+        parts.body.position.y = 0.5;
+        parts.head.position.y = 1.1;
       } else if (pose === "lay") {
+        // Z-Gömülme Düzeltmesi
         parts.group.rotation.x = -Math.PI / 2;
-        parts.group.position.y = -0.6;
+        parts.body.position.y = 0.3;
+        parts.head.position.y = 0.3;
       }
     }
 
     function connectMQTT() {
       client = new Paho.MQTT.Client("broker.hivemq.com", 8884, myId);
       client.onMessageArrived = onMessage;
-      
       client.connect({
         onSuccess: () => {
           client.subscribe("chameleon3d/" + roomName);
@@ -230,10 +255,15 @@
       }
 
       if (data.type === "pos") {
-        opponentGroup.position.x = data.x;
-        opponentGroup.position.z = data.z;
+        opponentGroup.position.set(data.x, data.y, data.z);
         opponentGroup.rotation.y = data.rotY;
-        opponentParts.matBody.color.setHex(data.color);
+
+        if (data.colors) {
+          opponentParts.headMat.color.setHex(parseInt(data.colors.head.replace("#", "0x")));
+          opponentParts.bodyMat.color.setHex(parseInt(data.colors.body.replace("#", "0x")));
+          opponentParts.armMat.color.setHex(parseInt(data.colors.arms.replace("#", "0x")));
+          opponentParts.legMat.color.setHex(parseInt(data.colors.legs.replace("#", "0x")));
+        }
         applyPose(opponentParts, data.pose);
       }
 
@@ -257,9 +287,8 @@
         document.getElementById('blind-overlay').style.display = 'flex';
         document.getElementById('ready-btn').style.display = 'none';
         document.getElementById('paint-panel').style.display = 'none';
-        // Hunter modeli yenile
         scene.remove(playerGroup);
-        playerParts = createCharacterModel("#ef4444", true);
+        playerParts = createCharacterModel(true);
         playerGroup = playerParts.group;
         scene.add(playerGroup);
       } else {
@@ -277,6 +306,7 @@
     function setupControls() {
       window.addEventListener('keydown', e => {
         keys[e.key.toLowerCase()] = true;
+        if (e.key === ' ') keys['space'] = true;
 
         if (e.key === '1') currentPose = "stand";
         if (e.key === '2') currentPose = "crouch";
@@ -284,15 +314,15 @@
         applyPose(playerParts, currentPose);
 
         if (e.key.toLowerCase() === 'f') {
-          if (myRole === "chameleon") {
-            sendMsg({ type: "whistle", sender: myId });
-          } else if (myRole === "hunter" && isGameStarted) {
-            triggerShoot();
-          }
+          if (myRole === "chameleon") sendMsg({ type: "whistle", sender: myId });
+          else if (myRole === "hunter" && isGameStarted) triggerShoot();
         }
       });
 
-      window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+      window.addEventListener('keyup', e => {
+        keys[e.key.toLowerCase()] = false;
+        if (e.key === ' ') keys['space'] = false;
+      });
 
       window.addEventListener('mousemove', e => {
         if (document.pointerLockElement === document.body && (isGameStarted || myRole === "chameleon")) {
@@ -322,32 +352,62 @@
       const speed = 0.14;
       let moveX = 0, moveZ = 0;
 
-      // WASD Düzeltmesi (Ileri-Geri Mantığı Karekter Yönüne Göre)
       if (keys['w']) moveZ += speed;
       if (keys['s']) moveZ -= speed;
       if (keys['a']) moveX += speed;
       if (keys['d']) moveX -= speed;
 
-      // Rotasyona Bağlı Yön
-      playerPos.x += moveZ * Math.sin(playerPos.rotY) + moveX * Math.cos(playerPos.rotY);
-      playerPos.z += moveZ * Math.cos(playerPos.rotY) - moveX * Math.sin(playerPos.rotY);
+      let nextX = playerPos.x + moveZ * Math.sin(playerPos.rotY) + moveX * Math.cos(playerPos.rotY);
+      let nextZ = playerPos.z + moveZ * Math.cos(playerPos.rotY) - moveX * Math.sin(playerPos.rotY);
 
-      playerGroup.position.x = playerPos.x;
-      playerGroup.position.z = playerPos.z;
+      // Çarpışma Mekanizması (Sınırlar ve Kutuların İçine Girmeme)
+      let canMove = true;
+      let nearWallForClimb = false;
+
+      const playerBox = new THREE.Box3().setFromCenterAndSize(
+        new THREE.Vector3(nextX, playerPos.y + 0.8, nextZ),
+        new THREE.Vector3(0.8, 1.6, 0.8)
+      );
+
+      for (let col of colliders) {
+        const colBox = new THREE.Box3().setFromObject(col);
+        if (playerBox.intersectsBox(colBox)) {
+          canMove = false;
+          nearWallForClimb = true;
+          break;
+        }
+      }
+
+      if (canMove) {
+        playerPos.x = nextX;
+        playerPos.z = nextZ;
+      }
+
+      // Tırmanma Mantığı (Duvara veya kutuya değiyorken SPACE)
+      if (keys['space'] && nearWallForClimb) {
+        if (playerPos.y < 8) playerPos.y += 0.12;
+      } else {
+        // Yer Çekimi
+        if (playerPos.y > 0) playerPos.y -= 0.1;
+        if (playerPos.y < 0) playerPos.y = 0;
+      }
+
+      playerGroup.position.set(playerPos.x, playerPos.y, playerPos.z);
       playerGroup.rotation.y = playerPos.rotY;
 
-      // Kamera Arkip
+      // Kamera
       camera.position.x = playerPos.x - Math.sin(playerPos.rotY) * 4.5;
       camera.position.z = playerPos.z - Math.cos(playerPos.rotY) * 4.5;
-      camera.position.y = 2.5;
-      camera.lookAt(playerPos.x, 1.2, playerPos.z);
+      camera.position.y = playerPos.y + 2.5;
+      camera.lookAt(playerPos.x, playerPos.y + 1.2, playerPos.z);
 
       sendMsg({
         type: "pos",
         x: playerPos.x,
+        y: playerPos.y,
         z: playerPos.z,
         rotY: playerPos.rotY,
-        color: parseInt(currentColor.replace("#", "0x")),
+        colors: bodyColors,
         pose: currentPose,
         sender: myId
       });
