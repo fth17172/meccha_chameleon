@@ -2,109 +2,216 @@
 <html lang="tr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chameleon 3D</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Chameleon 3D Online</title>
   <style>
-    body { margin: 0; overflow: hidden; font-family: sans-serif; background: #111; color: #fff; }
-    #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; z-index: 10; }
-    .card { background: rgba(0,0,0,0.9); padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #333; min-width: 280px; }
-    button { background: #22c55e; color: #000; font-weight: bold; border: none; padding: 12px 20px; margin: 10px; border-radius: 4px; cursor: pointer; width: 80%; }
-    input { padding: 10px; border-radius: 4px; border: 1px solid #444; background: #222; color: #fff; text-align: center; width: 80%; margin-bottom: 10px; }
-    #hud { position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.7); padding: 10px; border-radius: 4px; display: none; z-index: 5; }
+    body { margin: 0; overflow: hidden; font-family: sans-serif; background: #0f172a; color: #fff; user-select: none; }
+    #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; z-index: 10; background: #0f172a; }
+    .card { background: #1e293b; padding: 25px; border-radius: 12px; text-align: center; border: 1px solid #334155; width: 300px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
+    button { background: #22c55e; color: #022c22; font-weight: bold; border: none; padding: 12px; margin: 8px 0; border-radius: 6px; cursor: pointer; width: 100%; font-size: 15px; }
+    button:hover { background: #16a34a; }
+    input { padding: 12px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: #fff; text-align: center; width: 90%; margin-bottom: 10px; font-size: 16px; }
+    #hud { position: absolute; top: 12px; left: 12px; background: rgba(15, 23, 42, 0.85); padding: 12px; border-radius: 8px; display: none; z-index: 5; border: 1px solid #334155; }
+    #mobile-btn { position: absolute; bottom: 30px; right: 30px; width: 70px; height: 70px; background: #ef4444; border-radius: 50%; display: none; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; z-index: 5; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
 </head>
 <body>
 
   <div id="ui">
-    <div id="menu" class="card">
-      <h2>CHAMELEON 3D</h2>
-      <button onclick="selectDevice('pc')">PC (Klavye + Fare)</button>
-      <button onclick="selectDevice('mobile')">Mobil (Dokunmatik)</button>
-    </div>
-
-    <div id="lobby" class="card" style="display:none;">
-      <h2>LOBİ</h2>
-      <p id="my-id">ID Yükleniyor...</p>
-      <button onclick="copyID()">ID'yi Kopyala</button>
-      <hr style="border-color:#333; margin: 15px 0;">
-      <input type="text" id="join-id" placeholder="Rakip ID Yapıştır">
-      <button onclick="joinRoom()">Katıl</button>
+    <div id="setup-card" class="card">
+      <h2 style="margin-top:0;">CHAMELEON 3D</h2>
+      <input type="text" id="room-input" placeholder="Oda Adı Gir (Örn: oda1)">
+      
+      <p style="font-size:12px; color:#94a3b8; margin: 5px 0 10px 0;">Cihazını Seç ve Başla:</p>
+      <button onclick="initGame('pc')">PC (Klavye + Fare)</button>
+      <button onclick="initGame('mobile')">Mobil (Dokunmatik)</button>
     </div>
   </div>
 
   <div id="hud">
-    <div id="role-text">Rol: Bekleniyor...</div>
+    <div><b>Rol:</b> <span id="role-label">Bağlanıyor...</span></div>
+    <div id="controls-hint" style="font-size:11px; color:#94a3b8; margin-top:4px;">[WASD] Hareket | [E] Aksiyon</div>
   </div>
 
+  <div id="mobile-btn" onclick="triggerAction()">E</div>
+
   <script>
-    let deviceType = null, peer = null, conn = null, myId = '';
+    let deviceType = null, roomName = "", client = null, myId = "player_" + Math.random().toString(36).substr(2, 5);
+    let myRole = "chameleon", isHost = false;
+    let scene, camera, renderer, playerMesh, opponentMesh;
+    let keys = {}, playerPos = { x: 0, z: 0, rotY: 0 }, isCamo = false;
 
-    function selectDevice(type) {
+    function initGame(type) {
+      roomName = document.getElementById('room-input').value.trim();
+      if (!roomName) return alert("Lütfen bir oda adı yazın!");
+      
       deviceType = type;
-      document.getElementById('menu').style.display = 'none';
-      document.getElementById('lobby').style.display = 'block';
-      initPeer();
-    }
-
-    function initPeer() {
-      peer = new Peer();
-      peer.on('open', id => {
-        myId = id;
-        document.getElementById('my-id').innerText = "Senin ID: " + id;
-      });
-
-      peer.on('connection', c => {
-        conn = c;
-        startGame();
-      });
-
-      peer.on('error', err => {
-        alert('Bağlantı Hatası: ' + err.type);
-      });
-    }
-
-    function copyID() {
-      if(!myId) return alert('ID henüz hazır değil!');
-      navigator.clipboard.writeText(myId);
-      alert('ID kopyalandı, arkadaşına at!');
-    }
-
-    function joinRoom() {
-      const destId = document.getElementById('join-id').value.trim();
-      if (!destId) return alert("ID gir!");
-      conn = peer.connect(destId);
-      conn.on('open', () => {
-        startGame();
-      });
-    }
-
-    function startGame() {
       document.getElementById('ui').style.display = 'none';
       document.getElementById('hud').style.display = 'block';
-      document.getElementById('role-text').innerText = "Bağlantı Başarılı! Oyun Başladı.";
-      
-      // Three.js Basit Sahne
-      const scene = new THREE.Scene();
-      const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-      const renderer = new THREE.WebGLRenderer();
+      if (deviceType === 'mobile') document.getElementById('mobile-btn').style.display = 'flex';
+
+      connectMQTT();
+      setup3D();
+      setupControls();
+    }
+
+    function connectMQTT() {
+      client = new Paho.MQTT.Client("broker.hivemq.com", 8000, myId);
+      client.onMessageArrived = onMessage;
+      client.connect({
+        onSuccess: () => {
+          client.subscribe("chameleon3d/" + roomName + "/#");
+          // Odaya katıldığını bildir
+          sendMsg("join", { id: myId });
+        },
+        useSSL: false
+      });
+    }
+
+    function sendMsg(type, payload) {
+      if (!client || !client.isConnected()) return;
+      let message = new Paho.MQTT.Message(JSON.stringify({ sender: myId, type: type, data: payload }));
+      message.destinationName = "chameleon3d/" + roomName + "/" + type;
+      client.send(message);
+    }
+
+    function onMessage(message) {
+      let data = JSON.parse(message.payloadString);
+      if (data.sender === myId) return; // Kendi mesajlarını atla
+
+      if (data.type === "join") {
+        // İkinci kişi geldiğinde rolleri dağıt
+        isHost = true;
+        myRole = "hunter";
+        sendMsg("role_assign", { target: data.sender, role: "chameleon" });
+        updateRoleUI();
+      }
+
+      if (data.type === "role_assign" && data.data.target === myId) {
+        myRole = data.data.role;
+        updateRoleUI();
+      }
+
+      if (data.type === "pos") {
+        opponentMesh.position.set(data.data.x, 0.5, data.data.z);
+        opponentMesh.rotation.y = data.data.rotY;
+        opponentMesh.material.color.setHex(data.data.camo ? 0x1e293b : data.data.color);
+      }
+
+      if (data.type === "win") {
+        alert(data.data.msg);
+        location.reload();
+      }
+    }
+
+    function updateRoleUI() {
+      document.getElementById('role-label').innerText = myRole === "hunter" ? "AVCI (HUNTER)" : "BUKALEMUN";
+      playerMesh.material.color.setHex(myRole === "hunter" ? 0xef4444 : 0x22c55e);
+    }
+
+    function setup3D() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0f172a);
+      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+      renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(window.innerWidth, window.innerHeight);
       document.body.appendChild(renderer.domElement);
 
-      const geometry = new THREE.BoxGeometry();
-      const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-      const cube = new THREE.Mesh(geometry, material);
-      scene.add(cube);
-      camera.position.z = 5;
+      const light = new THREE.DirectionalLight(0xffffff, 1);
+      light.position.set(10, 20, 10);
+      scene.add(light);
+      scene.add(new THREE.AmbientLight(0xffffff, 0.4));
 
-      function animate() {
-        requestAnimationFrame(animate);
-        cube.rotation.x += 0.01;
-        cube.rotation.y += 0.01;
-        renderer.render(scene, camera);
+      // Harita Ground
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
+      floor.rotation.x = -Math.PI / 2;
+      scene.add(floor);
+
+      // Engeller (Gizlenme Noktaları)
+      for (let i = 0; i < 20; i++) {
+        const bush = new THREE.Mesh(new THREE.DodecahedronGeometry(1.2), new THREE.MeshStandardMaterial({ color: 0x334155 }));
+        bush.position.set((Math.random() - 0.5) * 40, 1, (Math.random() - 0.5) * 40);
+        scene.add(bush);
       }
+
+      // Karakterler
+      playerMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x22c55e }));
+      opponentMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xef4444 }));
+      scene.add(playerMesh);
+      scene.add(opponentMesh);
+
+      playerPos.x = (Math.random() - 0.5) * 10;
+      playerPos.z = (Math.random() - 0.5) * 10;
+
       animate();
+    }
+
+    function setupControls() {
+      if (deviceType === 'pc') {
+        window.addEventListener('keydown', e => {
+          keys[e.key.toLowerCase()] = true;
+          if (e.key.toLowerCase() === 'e') triggerAction();
+        });
+        window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+        window.addEventListener('mousemove', e => {
+          if (document.pointerLockElement === document.body) {
+            playerPos.rotY -= e.movementX * 0.004;
+          }
+        });
+        window.addEventListener('click', () => document.body.requestPointerLock());
+      }
+    }
+
+    function triggerAction() {
+      if (myRole === "chameleon") {
+        isCamo = !isCamo;
+      } else if (myRole === "hunter") {
+        if (playerMesh.position.distanceTo(opponentMesh.position) < 3) {
+          sendMsg("win", { msg: "Avcı Bukalemunu Yakaladı! Avcı Kazandı!" });
+          alert("Bukalemunu Yakaladın! Kazandın!");
+          location.reload();
+        }
+      }
+    }
+
+    function update() {
+      const speed = 0.12;
+      let moveX = 0, moveZ = 0;
+
+      if (keys['w']) moveZ -= speed;
+      if (keys['s']) moveZ += speed;
+      if (keys['a']) moveX -= speed;
+      if (keys['d']) moveX += speed;
+
+      playerPos.x += moveX * Math.cos(playerPos.rotY) + moveZ * Math.sin(playerPos.rotY);
+      playerPos.z += moveZ * Math.cos(playerPos.rotY) - moveX * Math.sin(playerPos.rotY);
+
+      playerMesh.position.set(playerPos.x, 0.5, playerPos.z);
+      playerMesh.rotation.y = playerPos.rotY;
+
+      playerMesh.material.color.setHex(isCamo ? 0x1e293b : (myRole === "hunter" ? 0xef4444 : 0x22c55e));
+
+      // Kamera Takibi
+      camera.position.x = playerPos.x - Math.sin(playerPos.rotY) * 6;
+      camera.position.z = playerPos.z - Math.cos(playerPos.rotY) * 6;
+      camera.position.y = 4;
+      camera.lookAt(playerMesh.position);
+
+      sendMsg("pos", {
+        x: playerPos.x,
+        z: playerPos.z,
+        rotY: playerPos.rotY,
+        camo: isCamo,
+        color: myRole === "hunter" ? 0xef4444 : 0x22c55e
+      });
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      update();
+      renderer.render(scene, camera);
     }
   </script>
 </body>
