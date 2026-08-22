@@ -38,10 +38,11 @@
   <div id="mobile-btn" onclick="triggerAction()">E</div>
 
   <script>
-    let deviceType = null, roomName = "", client = null, myId = "player_" + Math.random().toString(36).substr(2, 5);
-    let myRole = "chameleon", isHost = false;
+    let deviceType = null, roomName = "", client = null;
+    let myId = "p_" + Math.random().toString(36).substr(2, 6);
+    let myRole = "chameleon";
     let scene, camera, renderer, playerMesh, opponentMesh;
-    let keys = {}, playerPos = { x: 0, z: 0, rotY: 0 }, isCamo = false;
+    let keys = {}, playerPos = { x: (Math.random()-0.5)*10, z: (Math.random()-0.5)*10, rotY: 0 }, isCamo = false;
 
     function initGame(type) {
       roomName = document.getElementById('room-input').value.trim();
@@ -52,56 +53,60 @@
       document.getElementById('hud').style.display = 'block';
       if (deviceType === 'mobile') document.getElementById('mobile-btn').style.display = 'flex';
 
-      connectMQTT();
       setup3D();
       setupControls();
+      connectMQTT();
     }
 
     function connectMQTT() {
-      client = new Paho.MQTT.Client("broker.hivemq.com", 8000, myId);
+      // SSL/TLS destekleyen 8884 portu (Vercel HTTPS kısıtlamasını aşar)
+      client = new Paho.MQTT.Client("broker.hivemq.com", 8884, myId);
       client.onMessageArrived = onMessage;
+      
       client.connect({
         onSuccess: () => {
-          client.subscribe("chameleon3d/" + roomName + "/#");
-          // Odaya katıldığını bildir
-          sendMsg("join", { id: myId });
+          document.getElementById('role-label').innerText = "Oda Aranıyor...";
+          client.subscribe("chameleon3d/" + roomName);
+          
+          // Odaya duyuru yap
+          sendMsg({ type: "ping", sender: myId });
         },
-        useSSL: false
+        useSSL: true,
+        timeout: 5
       });
     }
 
-    function sendMsg(type, payload) {
+    function sendMsg(obj) {
       if (!client || !client.isConnected()) return;
-      let message = new Paho.MQTT.Message(JSON.stringify({ sender: myId, type: type, data: payload }));
-      message.destinationName = "chameleon3d/" + roomName + "/" + type;
+      let message = new Paho.MQTT.Message(JSON.stringify(obj));
+      message.destinationName = "chameleon3d/" + roomName;
       client.send(message);
     }
 
     function onMessage(message) {
       let data = JSON.parse(message.payloadString);
-      if (data.sender === myId) return; // Kendi mesajlarını atla
+      if (data.sender === myId) return;
 
-      if (data.type === "join") {
-        // İkinci kişi geldiğinde rolleri dağıt
-        isHost = true;
+      if (data.type === "ping") {
+        // İkinci oyuncu geldi: Odayı kuran kendini Avcı ilan eder, karşıya Bukalemun der
         myRole = "hunter";
-        sendMsg("role_assign", { target: data.sender, role: "chameleon" });
         updateRoleUI();
+        sendMsg({ type: "assign_role", target: data.sender, role: "chameleon", sender: myId });
       }
 
-      if (data.type === "role_assign" && data.data.target === myId) {
-        myRole = data.data.role;
+      if (data.type === "assign_role" && data.target === myId) {
+        myRole = data.role;
         updateRoleUI();
       }
 
       if (data.type === "pos") {
-        opponentMesh.position.set(data.data.x, 0.5, data.data.z);
-        opponentMesh.rotation.y = data.data.rotY;
-        opponentMesh.material.color.setHex(data.data.camo ? 0x1e293b : data.data.color);
+        opponentMesh.position.set(data.x, 0.5, data.z);
+        opponentMesh.rotation.y = data.rotY;
+        opponentMesh.material.color.setHex(data.camo ? 0x1e293b : (myRole === "hunter" ? 0x22c55e : 0xef4444));
       }
 
       if (data.type === "win") {
-        alert(data.data.msg);
+        alert(data.msg);
         location.reload();
       }
     }
@@ -124,26 +129,20 @@
       scene.add(light);
       scene.add(new THREE.AmbientLight(0xffffff, 0.4));
 
-      // Harita Ground
       const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
       floor.rotation.x = -Math.PI / 2;
       scene.add(floor);
 
-      // Engeller (Gizlenme Noktaları)
       for (let i = 0; i < 20; i++) {
         const bush = new THREE.Mesh(new THREE.DodecahedronGeometry(1.2), new THREE.MeshStandardMaterial({ color: 0x334155 }));
         bush.position.set((Math.random() - 0.5) * 40, 1, (Math.random() - 0.5) * 40);
         scene.add(bush);
       }
 
-      // Karakterler
       playerMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x22c55e }));
       opponentMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xef4444 }));
       scene.add(playerMesh);
       scene.add(opponentMesh);
-
-      playerPos.x = (Math.random() - 0.5) * 10;
-      playerPos.z = (Math.random() - 0.5) * 10;
 
       animate();
     }
@@ -169,7 +168,7 @@
         isCamo = !isCamo;
       } else if (myRole === "hunter") {
         if (playerMesh.position.distanceTo(opponentMesh.position) < 3) {
-          sendMsg("win", { msg: "Avcı Bukalemunu Yakaladı! Avcı Kazandı!" });
+          sendMsg({ type: "win", msg: "Avcı Bukalemunu Yakaladı! Avcı Kazandı!", sender: myId });
           alert("Bukalemunu Yakaladın! Kazandın!");
           location.reload();
         }
@@ -193,18 +192,18 @@
 
       playerMesh.material.color.setHex(isCamo ? 0x1e293b : (myRole === "hunter" ? 0xef4444 : 0x22c55e));
 
-      // Kamera Takibi
       camera.position.x = playerPos.x - Math.sin(playerPos.rotY) * 6;
       camera.position.z = playerPos.z - Math.cos(playerPos.rotY) * 6;
       camera.position.y = 4;
       camera.lookAt(playerMesh.position);
 
-      sendMsg("pos", {
+      sendMsg({
+        type: "pos",
         x: playerPos.x,
         z: playerPos.z,
         rotY: playerPos.rotY,
         camo: isCamo,
-        color: myRole === "hunter" ? 0xef4444 : 0x22c55e
+        sender: myId
       });
     }
 
