@@ -3,16 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Chameleon 3D Online</title>
+  <title>Chameleon 3D - HD Graphics</title>
   <style>
-    body { margin: 0; overflow: hidden; font-family: sans-serif; background: #0f172a; color: #fff; user-select: none; }
-    #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; z-index: 10; background: #0f172a; }
-    .card { background: #1e293b; padding: 25px; border-radius: 12px; text-align: center; border: 1px solid #334155; width: 300px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
-    button { background: #22c55e; color: #022c22; font-weight: bold; border: none; padding: 12px; margin: 8px 0; border-radius: 6px; cursor: pointer; width: 100%; font-size: 15px; }
-    button:hover { background: #16a34a; }
-    input { padding: 12px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: #fff; text-align: center; width: 90%; margin-bottom: 10px; font-size: 16px; }
-    #hud { position: absolute; top: 12px; left: 12px; background: rgba(15, 23, 42, 0.85); padding: 12px; border-radius: 8px; display: none; z-index: 5; border: 1px solid #334155; }
-    #mobile-btn { position: absolute; bottom: 30px; right: 30px; width: 70px; height: 70px; background: #ef4444; border-radius: 50%; display: none; align-items: center; justify-content: center; font-weight: bold; font-size: 18px; z-index: 5; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+    body { margin: 0; overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #050b14; color: #fff; user-select: none; }
+    #ui { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; z-index: 10; background: rgba(5,11,20,0.85); backdrop-filter: blur(8px); }
+    .card { background: #0f172a; padding: 30px; border-radius: 16px; text-align: center; border: 1px solid #1e293b; width: 320px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); }
+    h2 { margin-top: 0; font-size: 24px; color: #38bdf8; letter-spacing: 1px; }
+    button { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; font-weight: bold; border: none; padding: 14px; margin: 8px 0; border-radius: 8px; cursor: pointer; width: 100%; font-size: 15px; box-shadow: 0 4px 12px rgba(34,197,94,0.3); transition: transform 0.1s; }
+    button:active { transform: scale(0.98); }
+    input { padding: 12px; border-radius: 8px; border: 1px solid #334155; background: #020617; color: #fff; text-align: center; width: 90%; margin-bottom: 12px; font-size: 16px; outline: none; }
+    #hud { position: absolute; top: 16px; left: 16px; background: rgba(15, 23, 42, 0.9); padding: 16px; border-radius: 12px; display: none; z-index: 5; border: 1px solid #334155; backdrop-filter: blur(4px); }
+    #mobile-btn { position: absolute; bottom: 30px; right: 30px; width: 75px; height: 75px; background: #ef4444; border-radius: 50%; display: none; align-items: center; justify-content: center; font-weight: bold; font-size: 20px; z-index: 5; box-shadow: 0 6px 16px rgba(239,68,68,0.5); border: 2px solid #fff; }
+    #crosshair { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; background: rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); display: none; pointer-events: none; z-index: 6; }
   </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.0.1/mqttws31.min.js"></script>
@@ -20,19 +22,20 @@
 <body>
 
   <div id="ui">
-    <div id="setup-card" class="card">
-      <h2 style="margin-top:0;">CHAMELEON 3D</h2>
-      <input type="text" id="room-input" placeholder="Oda Adı Gir (Örn: oda1)">
-      
-      <p style="font-size:12px; color:#94a3b8; margin: 5px 0 10px 0;">Cihazını Seç ve Başla:</p>
+    <div class="card">
+      <h2>CHAMELEON 3D</h2>
+      <input type="text" id="room-input" placeholder="Oda Adı (Örn: oda123)">
+      <p style="font-size:13px; color:#94a3b8; margin: 4px 0 12px 0;">Cihaz Tipi Seçin:</p>
       <button onclick="initGame('pc')">PC (Klavye + Fare)</button>
       <button onclick="initGame('mobile')">Mobil (Dokunmatik)</button>
     </div>
   </div>
 
+  <div id="crosshair"></div>
+
   <div id="hud">
-    <div><b>Rol:</b> <span id="role-label">Bağlanıyor...</span></div>
-    <div id="controls-hint" style="font-size:11px; color:#94a3b8; margin-top:4px;">[WASD] Hareket | [E] Aksiyon</div>
+    <div style="font-size: 16px;"><b>Rol:</b> <span id="role-label" style="color:#38bdf8;">Aranıyor...</span></div>
+    <div id="controls-hint" style="font-size:12px; color:#94a3b8; margin-top:6px;">[WASD] Hareket | [E] Aksiyon / Kamuflaj</div>
   </div>
 
   <div id="mobile-btn" onclick="triggerAction()">E</div>
@@ -41,16 +44,19 @@
     let deviceType = null, roomName = "", client = null;
     let myId = "p_" + Math.random().toString(36).substr(2, 6);
     let myRole = "chameleon";
-    let scene, camera, renderer, playerMesh, opponentMesh;
-    let keys = {}, playerPos = { x: (Math.random()-0.5)*10, z: (Math.random()-0.5)*10, rotY: 0 }, isCamo = false;
+    let scene, camera, renderer, playerGroup, opponentGroup;
+    let playerParts = {}, opponentParts = {};
+    let keys = {}, playerPos = { x: (Math.random()-0.5)*20, z: (Math.random()-0.5)*20, rotY: 0 }, isCamo = false;
+    let walkAnimTime = 0;
 
     function initGame(type) {
       roomName = document.getElementById('room-input').value.trim();
-      if (!roomName) return alert("Lütfen bir oda adı yazın!");
+      if (!roomName) return alert("Lütfen oda adı girin!");
       
       deviceType = type;
       document.getElementById('ui').style.display = 'none';
       document.getElementById('hud').style.display = 'block';
+      if (deviceType === 'pc') document.getElementById('crosshair').style.display = 'block';
       if (deviceType === 'mobile') document.getElementById('mobile-btn').style.display = 'flex';
 
       setup3D();
@@ -58,8 +64,188 @@
       connectMQTT();
     }
 
+    // Insan / Karakter Modeli Oluşturucu (Kafa, Gövde, Kollar, Bacaklar, Şapka)
+    function createCharacterModel(isHunter) {
+      const group = new THREE.Group();
+      const matBody = new THREE.MeshStandardMaterial({ color: isHunter ? 0xd97706 : 0x16a34a, roughness: 0.6 });
+      const matSkin = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.8 });
+      const matDark = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.5 });
+
+      // Gövde
+      const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.4), matBody);
+      body.position.y = 0.9;
+      body.castShadow = true;
+      group.add(body);
+
+      // Kafa
+      const head = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), matSkin);
+      head.position.y = 1.6;
+      head.castShadow = true;
+      group.add(head);
+
+      // Avcı Şapkası / Aksesuar
+      if (isHunter) {
+        const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 0.1, 8), matDark);
+        hat.position.y = 1.85;
+        group.add(hat);
+      }
+
+      // Sol / Sağ Kol
+      const armGeo = new THREE.BoxGeometry(0.18, 0.7, 0.18);
+      const leftArm = new THREE.Mesh(armGeo, matBody);
+      leftArm.position.set(-0.42, 0.85, 0);
+      group.add(leftArm);
+
+      const rightArm = new THREE.Mesh(armGeo, matBody);
+      rightArm.position.set(0.42, 0.85, 0);
+      group.add(rightArm);
+
+      // Sol / Sağ Bacak
+      const legGeo = new THREE.BoxGeometry(0.2, 0.7, 0.2);
+      const leftLeg = new THREE.Mesh(legGeo, matDark);
+      leftLeg.position.set(-0.18, 0.35, 0);
+      group.add(leftLeg);
+
+      const rightLeg = new THREE.Mesh(legGeo, matDark);
+      rightLeg.position.set(0.18, 0.35, 0);
+      group.add(rightLeg);
+
+      return {
+        group: group,
+        leftArm: leftArm, rightArm: rightArm,
+        leftLeg: leftLeg, rightLeg: rightLeg,
+        bodyMat: matBody
+      };
+    }
+
+    function setup3D() {
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x0f172a);
+      scene.fog = new THREE.FogExp2(0x0f172a, 0.03);
+
+      camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      document.body.appendChild(renderer.domElement);
+
+      // Işıklandırma
+      const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+      scene.add(ambient);
+
+      const sun = new THREE.DirectionalLight(0xffedd5, 1.2);
+      sun.position.set(20, 40, 20);
+      sun.castShadow = true;
+      sun.shadow.mapSize.width = 2048;
+      sun.shadow.mapSize.height = 2048;
+      scene.add(sun);
+
+      // Zemin (Çim Kaplama Efekti)
+      const floorMat = new THREE.MeshStandardMaterial({ color: 0x1e3a1e, roughness: 0.9 });
+      const floor = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), floorMat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.receiveShadow = true;
+      scene.add(floor);
+
+      // Harita Objeleri (Ağaçlar, Taşlar, Çalılar)
+      for (let i = 0; i < 40; i++) {
+        const x = (Math.random() - 0.5) * 70;
+        const z = (Math.random() - 0.5) * 70;
+
+        if (Math.random() > 0.4) {
+          // Ağaç
+          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 2), new THREE.MeshStandardMaterial({ color: 0x78350f }));
+          trunk.position.set(x, 1, z);
+          trunk.castShadow = true;
+          scene.add(trunk);
+
+          const leaves = new THREE.Mesh(new THREE.ConeGeometry(2, 4, 6), new THREE.MeshStandardMaterial({ color: 0x15803d }));
+          leaves.position.set(x, 3.5, z);
+          leaves.castShadow = true;
+          scene.add(leaves);
+        } else {
+          // Çalı / Kaya
+          const isRock = Math.random() > 0.5;
+          const geo = isRock ? new THREE.DodecahedronGeometry(1) : new THREE.SphereGeometry(1.2, 6, 6);
+          const mat = new THREE.MeshStandardMaterial({ color: isRock ? 0x64748b : 0x166534, roughness: 0.8 });
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.position.set(x, 0.6, z);
+          mesh.castShadow = true;
+          scene.add(mesh);
+        }
+      }
+
+      // Karakterleri Oluştur
+      playerParts = createCharacterModel(false);
+      opponentParts = createCharacterModel(true);
+
+      playerGroup = playerParts.group;
+      opponentGroup = opponentParts.group;
+
+      scene.add(playerGroup);
+      scene.add(opponentGroup);
+
+      animate();
+    }
+
+    function animateWalk(parts, isMoving) {
+      if (isMoving) {
+        walkAnimTime += 0.15;
+        parts.leftLeg.rotation.x = Math.sin(walkAnimTime) * 0.6;
+        parts.rightLeg.rotation.x = -Math.sin(walkAnimTime) * 0.6;
+        parts.leftArm.rotation.x = -Math.sin(walkAnimTime) * 0.6;
+        parts.rightArm.rotation.x = Math.sin(walkAnimTime) * 0.6;
+      } else {
+        parts.leftLeg.rotation.x = 0;
+        parts.rightLeg.rotation.x = 0;
+        parts.leftArm.rotation.x = 0;
+        parts.rightArm.rotation.x = 0;
+      }
+    }
+
+    function updateControls() {
+      const speed = 0.14;
+      let moveX = 0, moveZ = 0;
+
+      if (keys['w']) moveZ -= speed;
+      if (keys['s']) moveZ += speed;
+      if (keys['a']) moveX -= speed;
+      if (keys['d']) moveX += speed;
+
+      const isMoving = moveX !== 0 || moveZ !== 0;
+
+      playerPos.x += moveX * Math.cos(playerPos.rotY) + moveZ * Math.sin(playerPos.rotY);
+      playerPos.z += moveZ * Math.cos(playerPos.rotY) - moveX * Math.sin(playerPos.rotY);
+
+      playerGroup.position.set(playerPos.x, 0, playerPos.z);
+      playerGroup.rotation.y = playerPos.rotY;
+
+      animateWalk(playerParts, isMoving);
+
+      // Kamera Yerleşimi (Üçüncü Şahıs Görüşü)
+      camera.position.x = playerPos.x - Math.sin(playerPos.rotY) * 5;
+      camera.position.z = playerPos.z - Math.cos(playerPos.rotY) * 5;
+      camera.position.y = playerPos.x ? 3 : 3;
+      camera.lookAt(playerPos.x, 1.2, playerPos.z);
+
+      // Kamuflaj Rengi (Doğal Çalı Rengine Bürünsün)
+      if (myRole === "chameleon") {
+        playerParts.bodyMat.color.setHex(isCamo ? 0x166534 : 0x16a34a);
+      }
+
+      sendMsg({
+        type: "pos",
+        x: playerPos.x,
+        z: playerPos.z,
+        rotY: playerPos.rotY,
+        isMoving: isMoving,
+        camo: isCamo,
+        sender: myId
+      });
+    }
+
     function connectMQTT() {
-      // SSL/TLS destekleyen 8884 portu (Vercel HTTPS kısıtlamasını aşar)
       client = new Paho.MQTT.Client("broker.hivemq.com", 8884, myId);
       client.onMessageArrived = onMessage;
       
@@ -67,12 +253,10 @@
         onSuccess: () => {
           document.getElementById('role-label').innerText = "Oda Aranıyor...";
           client.subscribe("chameleon3d/" + roomName);
-          
-          // Odaya duyuru yap
           sendMsg({ type: "ping", sender: myId });
         },
         useSSL: true,
-        timeout: 5sss
+        timeout: 5
       });
     }
 
@@ -88,7 +272,6 @@
       if (data.sender === myId) return;
 
       if (data.type === "ping") {
-        // İkinci oyuncu geldi: Odayı kuran kendini Avcı ilan eder, karşıya Bukalemun der
         myRole = "hunter";
         updateRoleUI();
         sendMsg({ type: "assign_role", target: data.sender, role: "chameleon", sender: myId });
@@ -100,9 +283,15 @@
       }
 
       if (data.type === "pos") {
-        opponentMesh.position.set(data.x, 0.5, data.z);
-        opponentMesh.rotation.y = data.rotY;
-        opponentMesh.material.color.setHex(data.camo ? 0x1e293b : (myRole === "hunter" ? 0x22c55e : 0xef4444));
+        opponentGroup.position.set(data.x, 0, data.z);
+        opponentGroup.rotation.y = data.rotY;
+        animateWalk(opponentParts, data.isMoving);
+
+        if (data.camo) {
+          opponentParts.bodyMat.color.setHex(0x166534); // Çalı rengi
+        } else {
+          opponentParts.bodyMat.color.setHex(myRole === "hunter" ? 0x16a34a : 0xd97706);
+        }
       }
 
       if (data.type === "win") {
@@ -112,39 +301,10 @@
     }
 
     function updateRoleUI() {
-      document.getElementById('role-label').innerText = myRole === "hunter" ? "AVCI (HUNTER)" : "BUKALEMUN";
-      playerMesh.material.color.setHex(myRole === "hunter" ? 0xef4444 : 0x22c55e);
-    }
-
-    function setup3D() {
-      scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x0f172a);
-      camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-      renderer = new THREE.WebGLRenderer({ antialias: true });
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      document.body.appendChild(renderer.domElement);
-
-      const light = new THREE.DirectionalLight(0xffffff, 1);
-      light.position.set(10, 20, 10);
-      scene.add(light);
-      scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-
-      const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), new THREE.MeshStandardMaterial({ color: 0x1e293b }));
-      floor.rotation.x = -Math.PI / 2;
-      scene.add(floor);
-
-      for (let i = 0; i < 20; i++) {
-        const bush = new THREE.Mesh(new THREE.DodecahedronGeometry(1.2), new THREE.MeshStandardMaterial({ color: 0x334155 }));
-        bush.position.set((Math.random() - 0.5) * 40, 1, (Math.random() - 0.5) * 40);
-        scene.add(bush);
-      }
-
-      playerMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x22c55e }));
-      opponentMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0xef4444 }));
-      scene.add(playerMesh);
-      scene.add(opponentMesh);
-
-      animate();
+      const isH = myRole === "hunter";
+      document.getElementById('role-label').innerText = isH ? "AVCI (HUNTER)" : "BUKALEMUN";
+      document.getElementById('role-label').style.color = isH ? "#ef4444" : "#22c55e";
+      playerParts.bodyMat.color.setHex(isH ? 0xd97706 : 0x16a34a);
     }
 
     function setupControls() {
@@ -156,7 +316,7 @@
         window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
         window.addEventListener('mousemove', e => {
           if (document.pointerLockElement === document.body) {
-            playerPos.rotY -= e.movementX * 0.004;
+            playerPos.rotY -= e.movementX * 0.003;
           }
         });
         window.addEventListener('click', () => document.body.requestPointerLock());
@@ -167,7 +327,7 @@
       if (myRole === "chameleon") {
         isCamo = !isCamo;
       } else if (myRole === "hunter") {
-        if (playerMesh.position.distanceTo(opponentMesh.position) < 3) {
+        if (playerGroup.position.distanceTo(opponentGroup.position) < 2.5) {
           sendMsg({ type: "win", msg: "Avcı Bukalemunu Yakaladı! Avcı Kazandı!", sender: myId });
           alert("Bukalemunu Yakaladın! Kazandın!");
           location.reload();
@@ -175,41 +335,9 @@
       }
     }
 
-    function update() {
-      const speed = 0.12;
-      let moveX = 0, moveZ = 0;
-
-      if (keys['w']) moveZ -= speed;
-      if (keys['s']) moveZ += speed;
-      if (keys['a']) moveX -= speed;
-      if (keys['d']) moveX += speed;
-
-      playerPos.x += moveX * Math.cos(playerPos.rotY) + moveZ * Math.sin(playerPos.rotY);
-      playerPos.z += moveZ * Math.cos(playerPos.rotY) - moveX * Math.sin(playerPos.rotY);
-
-      playerMesh.position.set(playerPos.x, 0.5, playerPos.z);
-      playerMesh.rotation.y = playerPos.rotY;
-
-      playerMesh.material.color.setHex(isCamo ? 0x1e293b : (myRole === "hunter" ? 0xef4444 : 0x22c55e));
-
-      camera.position.x = playerPos.x - Math.sin(playerPos.rotY) * 6;
-      camera.position.z = playerPos.z - Math.cos(playerPos.rotY) * 6;
-      camera.position.y = 4;
-      camera.lookAt(playerMesh.position);
-
-      sendMsg({
-        type: "pos",
-        x: playerPos.x,
-        z: playerPos.z,
-        rotY: playerPos.rotY,
-        camo: isCamo,
-        sender: myId
-      });
-    }
-
     function animate() {
       requestAnimationFrame(animate);
-      update();
+      updateControls();
       renderer.render(scene, camera);
     }
   </script>
